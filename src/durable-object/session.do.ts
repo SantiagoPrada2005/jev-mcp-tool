@@ -21,15 +21,26 @@ export class McpSessionDO {
 
     // Extract or initialize sessionId
     if (!this.sessionId) {
-      this.sessionId = url.searchParams.get('sessionId') || crypto.randomUUID();
+      this.sessionId = url.searchParams.get('sessionId') || request.headers.get('mcp-session-id') || crypto.randomUUID();
     }
 
-    if (request.method === 'GET' && url.pathname.endsWith('/sse')) {
+    const isSse = request.method === 'GET' && (
+      url.pathname.endsWith('/sse') ||
+      url.pathname.endsWith('/mcp') ||
+      request.headers.get('Accept')?.includes('text/event-stream') === true
+    );
+
+    if (isSse) {
       return this.handleSseConnect(url);
     }
 
     if (request.method === 'POST') {
       return this.handlePostMessage(request);
+    }
+
+    if (request.method === 'DELETE') {
+      this.cleanupSse();
+      return new Response(null, { status: 204 });
     }
 
     return new Response('Not Found', { status: 404 });
@@ -44,8 +55,10 @@ export class McpSessionDO {
 
     const encoder = new TextEncoder();
 
-    // 1. Initial MCP endpoint announcement event
-    const endpointEvent = `event: endpoint\ndata: /message?sessionId=${this.sessionId}\n\n`;
+    // 1. Initial MCP endpoint announcement event (preserve query token if present)
+    const token = url.searchParams.get('token') || url.searchParams.get('auth');
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    const endpointEvent = `event: endpoint\ndata: /message?sessionId=${this.sessionId}${tokenParam}\n\n`;
     this.sseWriter.write(encoder.encode(endpointEvent)).catch(() => this.cleanupSse());
 
     // 2. Setup periodic keep-alive heartbeat (every 15s)
@@ -64,6 +77,7 @@ export class McpSessionDO {
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
         'Access-Control-Allow-Origin': '*',
+        'mcp-session-id': this.sessionId || '',
       },
     });
   }
@@ -75,31 +89,50 @@ export class McpSessionDO {
       if (!body || typeof body !== 'object') {
         return new Response(
           JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } }
+          { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
         );
       }
 
-      // Process message in background and emit to SSE stream
-      this.processMessage(body).catch((err) => {
-        console.error('Unhandled JSON-RPC processing error:', err);
-      });
+      const isBatch = Array.isArray(body);
+      const messages = isBatch ? body : [body];
+      const responses: any[] = [];
 
-      return new Response(JSON.stringify({ status: 'accepted', sessionId: this.sessionId }), {
-        status: 202,
+      for (const msg of messages) {
+        const res = await this.processMessage(msg);
+        if (res !== undefined) {
+          responses.push(res);
+        }
+      }
+
+      if (responses.length === 0) {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'mcp-session-id': this.sessionId || '',
+          },
+        });
+      }
+
+      const payload = isBatch ? responses : responses[0];
+      return new Response(JSON.stringify(payload), {
+        status: 200,
         headers: {
           'Content-Type': 'application/json',
+          'mcp-session-id': this.sessionId || '',
           'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'mcp-session-id',
         },
       });
     } catch (error: any) {
       return new Response(
         JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: error.message } }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       );
     }
   }
 
-  private async processMessage(rpc: any): Promise<void> {
+  private async processMessage(rpc: any): Promise<any> {
     const id = rpc.id;
     const method = rpc.method;
     const params = rpc.params;
@@ -107,10 +140,9 @@ export class McpSessionDO {
     // Handle notifications (no id)
     if (id === undefined || id === null) {
       if (method === 'notifications/initialized') {
-        // Client ack, no response needed
-        return;
+        return undefined;
       }
-      return;
+      return undefined;
     }
 
     let responseRpc: any;
@@ -122,7 +154,7 @@ export class McpSessionDO {
             jsonrpc: '2.0',
             id,
             result: {
-              protocolVersion: '2024-11-05',
+              protocolVersion: params?.protocolVersion || '2024-11-05',
               capabilities: {
                 tools: { listChanged: false },
               },
@@ -230,10 +262,13 @@ export class McpSessionDO {
       };
     }
 
-    await this.sendSseEvent('message', responseRpc);
+    if (this.sseWriter) {
+      await this.sendSseEvent('message', responseRpc);
+    }
+    return responseRpc;
   }
 
-  private async sendSseEvent(event: string, data: any): Promise<void> {
+  private sendSseEvent(event: string, data: any): void {
     if (!this.sseWriter) {
       console.warn(`Cannot send event ${event}: SSE stream is not active for session ${this.sessionId}`);
       return;
@@ -242,7 +277,10 @@ export class McpSessionDO {
     try {
       const encoder = new TextEncoder();
       const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-      await this.sseWriter.write(encoder.encode(payload));
+      this.sseWriter.write(encoder.encode(payload)).catch((error) => {
+        console.error('Error writing to SSE writer:', error);
+        this.cleanupSse();
+      });
     } catch (error) {
       console.error('Error writing to SSE writer:', error);
       this.cleanupSse();
