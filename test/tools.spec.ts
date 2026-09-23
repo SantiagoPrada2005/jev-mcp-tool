@@ -148,4 +148,53 @@ describe('Jev MCP Tools - System 1 Evaluators', () => {
       expect(mockRun).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('OpenRouter fallback resilience', () => {
+    it('should fall back to OpenRouter when Workers AI fails and OPENROUTER_API_KEY is present', async () => {
+      const mockRun = vi.fn().mockRejectedValue(new Error('2021: Insufficient AI Gateway credits'));
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  answers: {
+                    is_safe: { type: 'noul', noul: 0.99 },
+                  },
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      });
+
+      // Temporarily mock global fetch
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch as any;
+
+      try {
+        const env = {
+          AI: { run: mockRun },
+          MCP_SESSION: {} as any,
+          OPENROUTER_API_KEY: 'test-openrouter-key',
+        };
+
+        const service = new JevEvaluationService(env);
+        const res = await service.evaluate({
+          state: 'test state',
+          questions: { is_safe: { type: 'noul', instructions: 'Is safe?' } },
+        });
+
+        expect(mockRun).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(res.model).toContain('openrouter/');
+        expect(res.answers.is_safe).toEqual({ type: 'noul', noul: 0.99 });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
 });
