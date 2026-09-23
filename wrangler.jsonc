@@ -18,7 +18,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["McpSessionDO"]
+      "new_sqlite_classes": ["McpSessionDO"]
     }
   ],
   "observability": {
