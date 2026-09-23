@@ -1,5 +1,13 @@
 {
   "mcp": {
+    "jev-mcp-server": {
+      "type": "remote",
+      "url": "https://jev-mcp-server.santiagopradamoreno.workers.dev/sse",
+      "headers": {
+        "Authorization": "Bearer jev_mcp_509c5851aa4b4b4e1e721f65e492e2baf81cb138dc336542"
+      },
+      "enabled": true
+    },
     "cloudflare": { "type": "remote", "url": "https://mcp.cloudflare.com/mcp", "enabled": true },
     "cloudflare-docs": { "type": "remote", "url": "https://docs.mcp.cloudflare.com/mcp", "enabled": true },
     "cloudflare-bindings": { "type": "remote", "url": "https://bindings.mcp.cloudflare.com/mcp", "enabled": true },
@@ -7,6 +15,16 @@
     "cloudflare-observability": { "type": "remote", "url": "https://observability.mcp.cloudflare.com/mcp", "enabled": true }
   },
   "mcpServers": {
+    "jev-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://jev-mcp-server.santiagopradamoreno.workers.dev/sse",
+        "--header",
+        "Authorization: Bearer jev_mcp_509c5851aa4b4b4e1e721f65e492e2baf81cb138dc336542"
+      ]
+    },
     "cloudflare": { "type": "http", "url": "https://mcp.cloudflare.com/mcp" },
     "cloudflare-docs": { "type": "http", "url": "https://docs.mcp.cloudflare.com/mcp" },
     "cloudflare-bindings": { "type": "http", "url": "https://bindings.mcp.cloudflare.com/mcp" },

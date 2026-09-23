@@ -20,13 +20,16 @@ export default {
       });
     }
 
-    // 2. Security: Perimeter Bearer Token verification
-    if (env.AUTH_TOKEN) {
+    // 2. Security: Perimeter token verification for /sse and /message
+    if (env.AUTH_TOKEN && (url.pathname === '/sse' || url.pathname === '/message')) {
       const authHeader = request.headers.get('Authorization');
-      const expected = `Bearer ${env.AUTH_TOKEN}`;
-      if (!authHeader || authHeader !== expected) {
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader?.trim();
+      const queryToken = url.searchParams.get('token') || url.searchParams.get('auth');
+      const token = bearerToken || queryToken;
+
+      if (!token || token !== env.AUTH_TOKEN) {
         return new Response(
-          JSON.stringify({ error: 'Unauthorized: Invalid or missing Bearer token' }),
+          JSON.stringify({ error: 'Unauthorized: Invalid or missing authentication token' }),
           { status: 401, headers: { 'Content-Type': 'application/json' } }
         );
       }
