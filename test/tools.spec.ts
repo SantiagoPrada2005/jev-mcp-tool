@@ -156,18 +156,11 @@ describe('Jev MCP Tools - System 1 Evaluators', () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  answers: {
-                    is_safe: { type: 'noul', noul: 0.99 },
-                  },
-                }),
-              },
-            },
-          ],
-          usage: { prompt_tokens: 10, completion_tokens: 5 },
+          model: 'typesafe/jev-1.13-20260917',
+          answers: {
+            is_safe: { type: 'noul', noul: 0.99 },
+          },
+          usage: { input_tokens: 10, output_tokens: 5 },
         }),
       });
 
@@ -190,7 +183,7 @@ describe('Jev MCP Tools - System 1 Evaluators', () => {
 
         expect(mockRun).toHaveBeenCalledTimes(1);
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        expect(res.model).toContain('openrouter/');
+        expect(res.model).toContain('typesafe/jev');
         expect(res.answers.is_safe).toEqual({ type: 'noul', noul: 0.99 });
       } finally {
         globalThis.fetch = originalFetch;
