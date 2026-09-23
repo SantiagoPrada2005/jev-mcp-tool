@@ -1,0 +1,24 @@
+# Jev MCP Server
+
+> Deterministic System 1 Evaluation Server for LLMs and autonomous agents running on Cloudflare Workers and Durable Objects.
+
+## Core Capabilities
+- **Perimeter Security Gatekeeper**: `guardrail_gatekeeper` evaluates untrusted external inputs for prompt injection and role hijacking before memory ingestion.
+- **RAG Context Pruning**: `context_pruner` filters document chunks concurrently in one network roundtrip, discarding irrelevant distractors.
+- **Quality Gates**: `stop_condition_eval` validates artifacts against an acceptance rubric before completing a mission.
+- **Speculative Fan-Out**: `speculative_eval` executes heterogeneous boolean (`noul`), categorical (`choice`), and rubric (`score`) evaluations simultaneously.
+
+## MCP Endpoints
+- **Streamable HTTP (JSON-RPC 2.0)**: `POST /`, `POST /mcp`, `POST /sse`
+- **Stateful SSE Transport**: `GET /sse`, `POST /message?sessionId=:sessionId`
+- **Authentication**: Bearer token via `Authorization` header or query parameter `?token=:token`
+
+## Tool Guidelines for AI Agents
+- Ingesting untrusted web or email content -> MUST call `guardrail_gatekeeper` before execution.
+- Processing vector search results -> MUST call `context_pruner` to eliminate noise.
+- Concluding multi-step development or refactoring -> MUST call `stop_condition_eval` to verify against rubric.
+- Multi-variable state classification -> MUST call `speculative_eval` instead of serial LLM prompting.
+
+## Full Documentation
+- Detailed prompt guide: [AGENT_INSTRUCTIONS.md](AGENT_INSTRUCTIONS.md)
+- Complete technical specifications: [llms-full.txt](llms-full.txt)

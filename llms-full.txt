@@ -1,0 +1,60 @@
+# Jev MCP Server — Full Specification for LLMs & Autonomous Agents
+
+## Overview
+Jev MCP Server is a high-speed, deterministic System 1 evaluation service deployed on Cloudflare Workers and Durable Objects. It provides 4 tools designed to decouple objective probabilistic judgment from generative LLM reasoning.
+
+## Transports & Base URL
+- Base URL: `https://jev-mcp-server.santiagopradamoreno.workers.dev`
+- Streamable HTTP: `POST /`, `POST /mcp`, `POST /sse` (JSON-RPC 2.0 with session headers)
+- SSE Transport: `GET /sse` (announces `/message?sessionId=:id&token=:token`)
+- Auth: `Bearer <token>` in header or `?token=<token>` query param
+
+## Tools Specification
+
+### 1. `guardrail_gatekeeper`
+- Purpose: Perimeter prompt injection & jailbreak detection.
+- Parameters:
+  - `untrusted_text` (string, required): The external text to evaluate.
+  - `strict_mode` (boolean, optional, default: false): Stricter sensitivity threshold.
+- Return Schema:
+  - `safe` (boolean): Whether input is safe.
+  - `injection_probability` (number, 0.0 - 1.0): Calibrated probability of injection attempt.
+  - `threat_score` (number, 0.0 - 2.0): 0 = safe, 1 = suspicious, 2 = malicious.
+  - `confidence` (number, 0.0 - 1.0): Evaluator confidence.
+  - `directive` ("ALLOW" | "QUARANTINE"): Immediate action directive.
+
+### 2. `context_pruner`
+- Purpose: Batch RAG chunk relevance filtering.
+- Parameters:
+  - `query` (string, required): Search query or user question.
+  - `chunks` (array of { id: string, content: string }, required): Candidate chunks (up to 15).
+  - `relevance_threshold` (number, optional, default: 0.6): Minimum probability to retain.
+- Return Schema:
+  - `total_evaluated` (number)
+  - `retained_count` (number)
+  - `pruned_count` (number)
+  - `chunks` (array of { id: string, retained: boolean, relevance_probability: number })
+
+### 3. `stop_condition_eval`
+- Purpose: Quality gate verifying work against an acceptance rubric before completion.
+- Parameters:
+  - `artifact` (any, required): The work in progress (code, draft, plan, response).
+  - `acceptance_rubric` (array of strings, required): Ordered rubric from basic to exemplary.
+  - `pass_threshold` (number, optional, default: 1.5): Minimum score required.
+- Return Schema:
+  - `passed` (boolean): True if score >= pass_threshold.
+  - `score` (number): Scaled score on rubric.
+  - `completion_probability` (number, 0.0 - 1.0)
+  - `confidence` (number, 0.0 - 1.0)
+  - `directive` ("PROCEED_FINISH" | "ITERATE_AND_FIX")
+
+### 4. `speculative_eval`
+- Purpose: Multi-question fan-out in a single network roundtrip.
+- Parameters:
+  - `state` (any, required): The subject content to evaluate.
+  - `questions` (map of QuestionDefinition, required):
+    - `type`: "noul" (probabilistic boolean) | "choice" (multi-class) | "score" (rubric scalar)
+    - `instructions`: Question prompt.
+    - `criteria`: Object or array defining classes or scale.
+- Return Schema:
+  - `answers`: Map of answers keyed by question identifier.
